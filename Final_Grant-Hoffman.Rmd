@@ -1,0 +1,66 @@
+---
+title: "Final_Grant-Hoffman"
+author: "Grant Hoffman"
+date: '2022-04-18'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+## Setup and load packages
+pacman::p_load(tidyverse,skimr,stargazer,pander,kableExtra, ggplot2, haven, broom, sandwich, lmtest, memisc, xtable, AER, plm)
+options(knitr.table.format = "latex")
+
+## Load data
+OD07_11 <- read_csv("Origin_Destination_07-11.csv")
+```
+
+```{r Skim the Data and select necessary columns}
+## Skim The data without charts
+skim_without_charts(OD07_11)
+
+##Grab some summary statistics
+OD07_11 %>% group_by(Year,Quarter,OpCarrier,AirportGroup) %>% 
+  summarize(freq = n()) %>% 
+  ungroup() %>% 
+  group_by(Year,OpCarrier) %>% 
+  arrange(freq) %>% 
+  summarize(max_freq_port = first(AirportGroup))
+
+```
+
+```{r Grab layover locations and num stops}
+OD07_11_flight_path <- OD07_11 %>% 
+  dplyr::select(Year,Quarter,AirportGroup,OpCarrier) %>% 
+  group_by(Year,Quarter,OpCarrier) %>% 
+  distinct(AirportGroup) %>% 
+  ungroup() %>% 
+  mutate(numstops = count.fields(textConnection(AirportGroup), sep = ":") - 2) 
+
+
+OD07_11_flight_path1 <- OD07_11_flight_path %>%
+  filter(numstops == 0) %>%
+  separate(AirportGroup, sep = ":", into = c("Origin","Destination"), remove = FALSE)
+
+OD07_11_flight_path2 <- OD07_11_flight_path %>%
+  filter(numstops == 1) %>%
+  separate(AirportGroup, sep = ":", into = c("Origin","Layover","Destination"), remove = FALSE)
+skim_without_charts(OD07_11_flight_path2)
+
+Dest_Org07_11 <- OD07_11_flight_path1 %>%
+  full_join(y = OD07_11_flight_path2)
+
+skim_without_charts(Dest_Org07_11)
+```
+
+```{r Flight network crossover table}
+Dest_Org07_11 %>% 
+  filter(numstops == 0) %>% 
+  group_by(Year,Quarter,AirportGroup) %>% 
+  summarize(numDistinct = n()) %>% 
+  filter(numDistinct != 1)
+
+```
+
+
+

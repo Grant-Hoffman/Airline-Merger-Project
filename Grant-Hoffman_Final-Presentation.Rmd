@@ -1,0 +1,359 @@
+---
+title: "U.S. Airline Networks and Their Effects on Prices"
+author: "Grant Hoffman"
+date: "`r Sys.Date()`"
+output: beamer_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+pacman::p_load(tidyverse,skimr,stargazer,pander,kableExtra, ggplot2, haven, broom, sandwich, lmtest, memisc, xtable, AER, plm, ggrepel, maps)
+options(knitr.table.format = "latex")
+
+theme_set(theme_bw())
+```
+
+## Introduction 
+- What Effects Flight Fares?
+  - Economies of Scale
+    - Bigger Planes 
+    - Larger Airports
+  - Route Alternatives
+    - Number of routes offered from point A to B
+    - Competing airlines on the route
+    
+- Effect of Airline Mergers
+  - Better economies of scale
+  - Less Route alternatives and competition
+
+## 2007 Flights
+```{r, echo = FALSE, include = FALSE}
+## Load in Data
+Loc_DO <- read_csv("Data/Airport_DO_Locations.csv")
+
+Loc_Lay <- read_csv("Data/Airport_Lay_Locations.csv")
+Loc <- Loc_DO %>% 
+  full_join(y = Loc_Lay)
+Loc <- Loc %>% 
+  mutate(Layover = as.character(Layover),
+         Lay_lat = as.numeric(Lay_lat),
+         Lay_long = as.numeric(Lay_long))
+
+## Create the map from 2007 flights
+RNGversion("4.0.0")
+set.seed(3457)
+Loc <- Loc[sample(1:nrow(Loc)), ] 
+Loc_07 <- Loc %>% 
+  filter(Year == 2007,
+         Quarter == 1,
+         Dest_long > -130,
+         Org_long > -130,
+         Dest_lat < 60,
+         Dest_lat > 25,
+         Org_lat < 60,
+         Org_lat > 25)
+Loc_07 <-  Loc_07[1:100,]
+Loc_07D <- Loc_07[1:100,] %>% 
+  filter(is.na(Layover))
+Loc_07L <- Loc_07[1:100,] %>% 
+  filter(!is.na(Layover))
+
+Loc_11 <- Loc %>% 
+  filter(Year == 2011,
+         Quarter == 4,
+         Dest_long > -130,
+         Org_long > -130,
+         Dest_lat < 60,
+         Dest_lat > 25,
+         Org_lat < 60,
+         Org_lat > 25)
+Loc_11 <-  Loc_11[1:100,]
+Loc_11D <- Loc_11[1:100,] %>% 
+  filter(is.na(Layover))
+Loc_11L <- Loc_11[1:100,] %>% 
+  filter(!is.na(Layover))
+```
+
+```{r, Hub and Spoke Display, fig.cap = "Sample of 100 Flights from Quarter 1 of 2007"}
+usMap <- borders("state",color = "grey",fill = "white")
+ggplot(mapping = aes(color = OpCarrier)) + usMap +
+  geom_curve(data=Loc_07D,
+             aes(x=Org_long, y=Org_lat, xend=Dest_long, yend=Dest_lat),
+             # color ="green",
+             size=.5,
+             curvature = 0) +
+  geom_curve(data = Loc_07L,
+             aes(x=Org_long, y = Org_lat, xend = Lay_long, yend = Lay_lat),
+             #color = "blue",
+             size = 0.5,
+             curvature = 0.3) +
+  geom_curve(data = Loc_07L,
+             aes(x=Lay_long, y = Lay_lat, xend = Dest_long, yend = Dest_lat),
+             #color = "blue",
+             size = 0.5,
+             curvature = 0.3) +
+  geom_point(data=Loc_07,
+             aes(x=Org_long, y=Org_lat), 
+             color ="blue",
+             size=1.5,
+             alpha = 0.5) +
+  geom_point(data = Loc_07L,
+             aes(x = Lay_long, y = Lay_lat),
+             color = "red") +
+  geom_point(data=Loc_07,
+             aes(x=Dest_long, y=Dest_lat), 
+             color ="blue",
+             alpha = 0.5) +
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title=element_text(hjust=0.5, size=12)) +
+  ggtitle("Sample of 100 Flights from Quarter 1 of 2007")
+```
+
+## 2011 Flights
+```{r, Hub and Spoke 2011, fig.cap = "Sample of 100 Flights from Quarter 4 of 2011",}
+usMap <- borders("state",color = "grey",fill = "white")
+ggplot(mapping = aes(color = OpCarrier)) + usMap +
+  geom_curve(data=Loc_11D,
+             aes(x=Org_long, y=Org_lat, xend=Dest_long, yend=Dest_lat),
+             #color ="green",
+             size=.5,
+             curvature = 0) +
+  geom_curve(data = Loc_11L,
+             aes(x=Org_long, y = Org_lat, xend = Lay_long, yend = Lay_lat),
+             #color = "blue",
+             size = 0.5,
+             curvature = 0.3) +
+  geom_curve(data = Loc_11L,
+             aes(x=Lay_long, y = Lay_lat, xend = Dest_long, yend = Dest_lat),
+             #color = "blue",
+             size = 0.5,
+             curvature = 0.3) +
+  geom_point(data=Loc_11,
+             aes(x=Org_long, y=Org_lat), 
+             color ="blue",
+             size=1.5,
+             alpha = 0.5) +
+  geom_point(data = Loc_11L,
+             aes(x = Lay_long, y = Lay_lat),
+             color = "red") +
+  geom_point(data=Loc_11,
+             aes(x=Dest_long, y=Dest_lat), 
+             color ="blue",
+             alpha = 0.5) +
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        axis.ticks=element_blank(),
+        plot.title=element_text(hjust=0.5, size=12))
+```
+
+## Flight Tables
+
+```{r Flight Table, fig.cap = "Amount of Flights from most popular Airports"}
+Loc_fac <- Loc %>% filter((Year == 2007 & Quarter == 1) | (Year == 2011 & Quarter == 4)) %>% 
+  dplyr::select(Year,Quarter,Origin,Destination,Layover) %>% 
+  pivot_longer(cols = c(Destination,Origin,Layover), names_to = "Included Airports", values_to = "Airports") 
+
+Loc_fac %>% group_by(Airports) %>%  
+  filter(n() > 1250 & !is.na(Airports)) %>% 
+  ungroup() %>% 
+  ggplot(mapping = aes(x = Airports, fill = factor(Year))) +
+  geom_bar(position = "Dodge") +
+  labs(fill = "Year", y = "Number of Flights") +
+  theme(legend.position = "bottom")
+```
+
+## Brueckner, Dyer, Spliller (1992)
+- More spoke traffic means lower fares
+- Competition does not lower fares across the board
+- Higher traffic in the network lowers fares
+
+## Theoretical Framework from Brueckner, Dyer, and Spiller
+```{r, Hub and Spoke Figure,fig.align = "center", fig.height=2.5, fig.width=2.5}
+xcoord <- c(0,0,-0.5,0.5)
+ycoord <- c(0,0.5,-0.5,-0.5)
+names <- c("H","A","B","C")
+
+Hub_spoke <- data.frame(xcoord,ycoord,names)
+
+Hub_spoke_plot <- Hub_spoke %>% ggplot() + 
+  geom_point(mapping = aes(x = xcoord, y = ycoord)) +
+  geom_segment(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[2], yend = ycoord[2])) +
+  geom_segment(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[3], yend = ycoord[3])) +
+  geom_segment(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[4], yend = ycoord[4])) +
+  geom_text(mapping = aes(x = xcoord, y = ycoord, label = names), hjust = c(-0.75,-0.5,0,0), vjust = c(0,0,-1,0)) +
+  theme_void()
+
+Hub_spoke_plot
+```
+
+<!-- ## Theoretical Framework from Brueckner, Dyer, and Spiller Continued -->
+<!-- ```{r, Hub and Spoke Figure 2,fig.align = "center", fig.height=2.5, fig.width=2.5} -->
+<!-- xcoord2 <- c(-1,1,-2,2,0,0) -->
+<!-- ycoord2 <- c(0,0,0,0,-0.2,0.2) -->
+<!-- names2 <- c("A","B","E","F","C","D") -->
+
+<!-- Hub_spoke2 <- data.frame(xcoord2,ycoord2,names2) -->
+
+<!-- Hub_spoke_plot2 <- Hub_spoke2 %>% ggplot() +  -->
+<!--   geom_point(mapping = aes(x = xcoord2, y = ycoord2)) + -->
+<!--   geom_curve(mapping = aes(x = xcoord2[1], y = ycoord2[1], xend = xcoord2[2], yend = ycoord2[2], -->
+<!--                linetype = "Carrier 1"), -->
+<!--              curvature = 0.2) + -->
+<!--   geom_segment(mapping = aes(x = xcoord2[1], y = ycoord2[1], xend = xcoord2[2], yend = ycoord2[2], -->
+<!--                              linetype = "Carrier 2")) + -->
+<!--   geom_segment(mapping = aes(x = xcoord2[1], y = ycoord2[1], xend = xcoord2[3], yend = ycoord2[3], -->
+<!--                linetype = "Carrier 1")) + -->
+<!--   geom_segment(mapping = aes(x = xcoord2[2], y = ycoord2[2], xend = xcoord2[4], yend = ycoord2[4], -->
+<!--                              linetype = "Carrier 2")) + -->
+<!--   geom_segment(mapping = aes(x = xcoord2[1], y = ycoord2[1], xend = xcoord2[5], yend = ycoord2[5], -->
+<!--                linetype = "Carrier 1")) + -->
+<!--   geom_segment(mapping = aes(x = xcoord2[1], y = ycoord2[1], xend = xcoord2[6], yend = ycoord2[6], -->
+<!--                linetype = "Carrier 1")) + -->
+<!--   geom_segment(mapping = aes(x = xcoord2[2], y = ycoord2[2], xend = xcoord2[5], yend = ycoord2[5], -->
+<!--                              linetype = "Carrier 2")) + -->
+<!--   geom_segment(mapping = aes(x = xcoord2[2], y = ycoord2[2], xend = xcoord2[6], yend = ycoord2[6], -->
+<!--                              linetype = "Carrier 2")) + -->
+<!--   geom_text(mapping = aes(x = xcoord2, y = ycoord2, label = names2), vjust = c(-1,-1,-1,-1,2,3), size = 2) + -->
+<!--   theme_void() + -->
+<!--   # theme(text = element_text(size = 50)) + -->
+<!--   scale_linetype_manual(values = c("dashed","solid")) + -->
+<!--   labs(linetype = 'Carrier') + -->
+<!--   theme(legend.key.size = unit(1, 'cm'), -->
+<!--         legend.text = element_text(size = 4)) -->
+<!-- Hub_spoke_plot2 -->
+<!-- #ggsave(filename = "Figures/Hub and Spoke Model2.png", Hub_spoke_plot2)  -->
+
+<!-- ``` -->
+
+<!-- ## Theoretical Framework from Brueckner, Dyer, and Spiller Continued -->
+<!-- ```{r, Hub and Spoke Figure 3,fig.align = "center", fig.height=2.5, fig.width=2.5} -->
+
+<!-- carrier <- c("Carrier 1", "Carrier 2") -->
+<!-- Hub_spoke_plot3 <- Hub_spoke %>% ggplot() +  -->
+<!--   geom_point(mapping = aes(x = xcoord, y = ycoord)) + -->
+<!--   geom_segment(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[2], yend = ycoord[2], -->
+<!--                linetype = "Major Carrier", -->
+<!--                color = "Major Carrier")) + -->
+<!--   geom_segment(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[3], yend = ycoord[3], -->
+<!--                linetype = "Major Carrier", -->
+<!--                color = "Major Carrier")) + -->
+<!--   geom_segment(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[4], yend = ycoord[4], -->
+<!--                linetype = "Major Carrier", -->
+<!--                color = "Major Carrier")) + -->
+<!--   geom_segment(mapping = aes(x = xcoord[2], y = ycoord[2], xend = xcoord[3], yend = ycoord[3], -->
+<!--                linetype = "Low Cost Carrier", -->
+<!--                color = "Low Cost Carrier"))+ -->
+<!--   geom_text(mapping = aes(x = xcoord, y = ycoord, label = names), hjust = c(-0.75,-0.5,0,0), vjust = c(0,0,-1,0)) + -->
+<!--   theme_void() + -->
+<!--   scale_color_manual(values = c("red","black")) + -->
+<!--   scale_linetype_manual(values = c("dashed","solid")) + -->
+<!--   labs(linetype = 'Carrier', -->
+<!--        color = 'Carrier') + -->
+<!--   theme(legend.key.size = unit(1, 'cm'), -->
+<!--         legend.text = element_text(size = 4)) -->
+<!-- Hub_spoke_plot3 -->
+<!-- #ggsave(filename = "Figures/Hub and Spoke Model3.png", Hub_spoke_plot3)  -->
+<!-- ``` -->
+
+<!-- ## Theoretical Framework from Brueckner, Dyer, and Spiller Continued -->
+<!-- ```{r, Hub and Spoke Figure 4,fig.align = "center", fig.height=2.5, fig.width=2.5} -->
+
+<!-- Hub_spoke_plot <- Hub_spoke %>% ggplot() +  -->
+<!--   geom_point(mapping = aes(x = xcoord, y = ycoord)) + -->
+<!--   geom_segment(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[2], yend = ycoord[2], color = "B-A"), -->
+<!--                arrow = arrow(length = unit(0.25, "inches"))) + -->
+<!--   geom_segment(mapping = aes(x = xcoord[3], y = ycoord[3], xend = xcoord[1], yend = ycoord[1], color = "B-A"), -->
+<!--                arrow = arrow(length = unit(0.25, "inches"))) + -->
+<!--   geom_curve(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[4], yend = ycoord[4], color = "B-C"), -->
+<!--              curvature = -0.2, -->
+<!--              arrow = arrow(length = unit(0.25, "inches")), -->
+<!--              linetype = "dashed") + -->
+<!--   geom_curve(mapping = aes(x= xcoord[3], y = ycoord[3], xend = xcoord[1], yend = ycoord[1], color = "B-C"), -->
+<!--              curvature = -0.2, -->
+<!--              arrow = arrow(length = unit(0.25, "inches")), -->
+<!--              linetype ="dashed") + -->
+<!--   geom_curve(mapping = aes(x= xcoord[3], y = ycoord[3], xend = xcoord[1], yend = ycoord[1], color = "B-H"), -->
+<!--              curvature = 0.2, -->
+<!--              arrow = arrow(length = unit(0.25, "inches")), -->
+<!--              linetype = "dashed") + -->
+<!--   geom_curve(mapping = aes(x = xcoord[4], y = ycoord[4], xend = xcoord[1], yend = ycoord[1], color = "C-A"), -->
+<!--              curvature = -0.2, -->
+<!--              arrow = arrow(length = unit(0.25, "inches")), -->
+<!--              linetype = "dashed") + -->
+<!--   geom_curve(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[2], yend = ycoord[2], color = "C-A"), -->
+<!--              curvature = -0.2, -->
+<!--              arrow = arrow(length = unit(0.25, "inches")), -->
+<!--              linetype = "dashed") + -->
+<!--   geom_curve(mapping = aes(x = xcoord[1], y = ycoord[1], xend = xcoord[2], yend = ycoord[2], color = "H-A"), -->
+<!--              curvature = 0.2, -->
+<!--              arrow = arrow(length = unit(0.25, "inches")), -->
+<!--              linetype = "dashed") + -->
+<!--   geom_text(mapping = aes(x = xcoord, y = ycoord, label = names), hjust = c(-0.75,-0.5,0,0), vjust = c(0,0,-1,0)) + -->
+<!--   theme_void() + -->
+<!--   labs(color = 'Trip') + -->
+<!--   theme(legend.key.size = unit(1, 'cm'), -->
+<!--         legend.text = element_text(size = 4)) -->
+<!-- #ggsave(filename = "Figures/Hub_Spoke_Example.png", Hub_spoke_plot) -->
+<!-- Hub_spoke_plot -->
+<!-- ``` -->
+
+- This is a hub and spoke network of airports with H as the hub
+- $D(Q_{ij})$ is the inverse demand function where $Q_{ij}$ is the traffic for a round trip from i to j
+
+## Theoretical Framework Continued
+- $R(Q_{ij}) = Q_{ij}*D(Q_{ij})$ is revenue for a round trip from i to j
+- Total Revenue $R(Q)$ for the above hub and spoke is then: 
+\begin{equation}
+R(Q_{AB}) + R(Q_{AC}) + R(A_{BC}) + R(Q_{AH}) + R(Q_{BH}) + R(Q_{CH})
+\end{equation}
+- $c(Q_{ij})$ is the cost of a round trip from i to j
+- Since there are increasing returns to scale $c' > 0$ and $c'' < 0$ 
+- Profit is maximized by setting marginal revenue $R'(Q)$ equal to marginal cost $c'(Q)$
+
+## Theoretical Framework Continued
+- In a hub and spoke network there is no direct travel from spokes A to B or A to C or B to C
+- Profit maximization for a spoke node A to the hub node H is simply: 
+\begin{equation} 
+R'(Q_{AH}) = c'(Q_{AB} + Q_{AC} + Q_{AH})
+\end{equation}
+- Profit maximization for a spoke node A to another spoke B is more complicated:
+- Because there are no direct flights then marginal revenue for a flight from A to B would be:
+\begin{equation}
+R'(Q_{AB}) = R'(Q_{AH}) + R'(Q_{BH}) 
+\end{equation}
+- Substituting in the marginal cost functions yeilds:
+\begin{equation}
+R'(Q_{AB}) = c'(Q_{AB} + Q_{AC} + Q_{AH} + Q_{BA} + Q_{BC} + Q_{BH}) 
+\end{equation}
+
+## Applying the framework
+- As the Airlines increasingly convert to hub and spoke models what is the effect on prices?
+  - It depends on how strong the economies of density are.
+  - Hub and spoke models increase the ability for airlines to use bigger planes and increase scaling
+  - Hub and spoke models also require more connections which increases the number of flights.
+  - which prevails? 
+  
+## Huschelrath and Muller (2014)
+- Analyzes the effect of America West - US Airlines merger in 2005
+- Uses a differences-in-differences appraoch fixing effects across route and ex-ante carrier
+- Two types of routes used
+  - Direct routes
+  - Single connections
+- Compares the price effects on each route depending on the type of competition between the airlines prior to the merger
+- Found that on routes where competition between airlines took place there was an increase in fares but on routes that saw almost no competition between airlines there was a decrease in prices that was larger
+- Overall increase in consumer welfare
+
+## My paper
+- My paper will combine the two approaches
+- Using the network characteristics of the airports along with the route competition to enhance the analyses done by Huschelrath and Muller
+- The goal is to use a differences-in-differences approach and control for network characteristics to analyze the consumer welfare effects of the Northwest-Delta Merger of 2010. 
+
+
